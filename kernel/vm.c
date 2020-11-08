@@ -311,7 +311,6 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -319,12 +318,16 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
+    if(*pte & PTE_W){
+      *pte ^= PTE_W;
+      *pte |= PTE_COW;
+    }
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+    // if((mem = kalloc()) == 0)
+    //   goto err;
+    // memmove(mem, (char*)pa, PGSIZE);
+    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
+      // kfree(mem);
       goto err;
     }
   }
@@ -334,6 +337,35 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   uvmunmap(new, 0, i / PGSIZE, 1);
   return -1;
 }
+
+int
+_uvmcow(pte_t *pte){
+  uint64 pa;
+  char *mem;
+
+  if((mem = kalloc()) == 0)
+      return -1;
+  pa = PTE2PA(*pte);
+  memmove(mem, (char*)pa, PGSIZE);
+  *pte ^= PTE_COW;
+  *pte |= PTE_W;
+  *pte = PA2PTE(mem) || PTE_FLAGS(*pte);
+  return 0;
+}
+
+int
+uvmcow(pagetable_t pagetable,uint64 fault_addr){
+  pte_t *pte;
+ 
+  if((pte = walk(pagetable, PGROUNDDOWN(fault_addr), 0)) == 0)
+      return -1;
+  if((*pte & PTE_V) == 0)
+  return -1;  
+  if((*pte & PTE_COW) == 0)
+  return -1;   
+  return _uvmcow(pte); 
+}
+
 
 // mark a PTE invalid for user access.
 // used by exec for the user stack guard page.
