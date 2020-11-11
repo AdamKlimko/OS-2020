@@ -21,13 +21,47 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
+  uint64 *cntref;
 } kmem;
+
+int
+dec_ref(uint64 pa){
+  acquire(&kmem.lock);
+  uint64 index = PA2IND(pa);
+  uint64 ret;
+
+  if(kmem.cntref[index] == 0)
+      panic("def_rec: cntref is 0");
+
+  kmem.cntref[index] -= 1;
+  ret = kmem.cntref[index];
+  release(&kmem.lock);
+
+  return ret;
+}
+
+void 
+inc_ref(uint64 pa){
+  acquire(&kmem.lock);
+  kmem.cntref[PA2IND(pa)] += 1;
+  release(&kmem.lock);
+}
 
 void
 kinit()
 {
+  int frames = 0;
+  uint64 addr = PGROUNDUP((uint64)end);
+
+  kmem.cntref = (uint64*)addr;
+  while(addr < PHYSTOP){
+    kmem.cntref[PA2IND(addr)] = 1;
+    addr += PGSIZE;
+    frames++;
+  }
+
   initlock(&kmem.lock, "kmem");
-  freerange(end, (void*)PHYSTOP);
+  freerange(kmem.cntref+frames, (void*)PHYSTOP);
 }
 
 void
@@ -46,6 +80,9 @@ freerange(void *pa_start, void *pa_end)
 void
 kfree(void *pa)
 {
+  if(dec_ref((uint64)pa) != 0)
+  return;
+  
   struct run *r;
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
@@ -72,8 +109,10 @@ kalloc(void)
 
   acquire(&kmem.lock);
   r = kmem.freelist;
-  if(r)
+  if(r){
     kmem.freelist = r->next;
+    kmem.cntref[PA2IND(r)] += 1; //increment cntref
+  }
   release(&kmem.lock);
 
   if(r)
