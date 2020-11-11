@@ -363,8 +363,7 @@ uvmcow(pagetable_t pagetable,uint64 fault_addr){
     return -1;
 
   memmove(mem, (char*)pa, PGSIZE);
-  //uvmunmap(pagetable, PGROUNDDOWN(fault_addr), PGSIZE, 0);
-  
+  uvmunmap(pagetable, PGROUNDDOWN(fault_addr), PGSIZE, 0);
   if(mappages(pagetable, PGROUNDDOWN(fault_addr), PGSIZE, (uint64)mem, flags) != 0){
     kfree(mem);
     return -1;
