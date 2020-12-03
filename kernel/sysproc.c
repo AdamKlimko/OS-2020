@@ -95,3 +95,27 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_mmap(void)
+{
+  int length, prot, flags, fd; 
+  if(argint(1, &length) < 0)
+    return -1;
+  if(argint(2, &prot) < 0)
+    return -1;
+  if(argint(3, &flags) < 0)
+    return -1;
+  if(argint(4, &fd) < 0)
+    return -1;
+
+  uint64 addr = vma_map(myproc(),myproc()->ofile[fd], length, prot, flags);
+
+  return addr;
+}
+
+uint64
+sys_munmap(void)
+{
+  return -1;
+}
