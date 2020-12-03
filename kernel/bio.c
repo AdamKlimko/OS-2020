@@ -178,7 +178,7 @@ brelse(struct buf *b)
     bcache.head[bucket].next = b;
   }
   
-  release(&bcache.lock);
+  release(&bcache.lock[bucket]);
 }
 
 void
