@@ -330,9 +330,7 @@ sys_open(void)
     return -1;
   }
 
-  // printf("open: path=%s; no_follow=%d\n", path, !!(omode & O_NOFOLLOW));
-
-  // resolve symlink
+   // resolve symlink
   if(!(omode & O_NOFOLLOW)) {
     uint cnt = 0;
     while(ip->type == T_SYMLINK && cnt < 10) {
@@ -381,11 +379,15 @@ sys_open(void)
     f->major = ip->major;
   } else {
     f->type = FD_INODE;
+    f->off = 0;
   }
   f->ip = ip;
-  f->off = 0;
   f->readable = !(omode & O_WRONLY);
   f->writable = (omode & O_WRONLY) || (omode & O_RDWR);
+
+  if((omode & O_TRUNC) && ip->type == T_FILE){
+    itrunc(ip);
+  }
 
   iunlock(ip);
   end_op();
@@ -527,22 +529,23 @@ sys_pipe(void)
   return 0;
 }
 
-int
-symlink(char* target, char* path)
-{
+uint64 sys_symlink(void) {
+  char target[MAXPATH], path[MAXPATH];
   int fd;
   struct file *f;
   struct inode *ip;
 
-  // find target inode
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
+    return -1;
+  
   begin_op();
 
-  // new inode
+  // Create symlink inode
   ip = create(path, T_SYMLINK, 0, 0);
-    if(ip == 0){
-      end_op();
-      return -1;
-    }
+  if(ip == 0){
+    end_op();
+    return -1;
+  }
 
   if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
     if(f)
@@ -566,46 +569,6 @@ symlink(char* target, char* path)
   iunlockput(ip);
 
   end_op();
-      
+
   return 0;
 }
-
-uint64
-sys_symlink(void)
-{
-  char target[MAXPATH], path[MAXPATH];
-
-  if(argstr(0, target, DIRSIZ) < 0 || argstr(1, path, MAXPATH) < 0)
-      return -1;
-  symlink(target, path);
-  return 0;
-}
-
-
-
-
-
-
-
-
-//   ilock(dp);
-//   if(dp->dev != ip->dev || dirlink(dp, target, ip->inum) < 0){
-//     iunlockput(dp);
-//     goto bad;
-//   }
-//   iunlockput(dp);
-//   iput(ip);
-
-//   end_op();
-
-//   return 0;
-
-// bad:
-//   ilock(ip);
-//   ip->nlink--;
-//   iupdate(ip);
-//   iunlockput(ip);
-//   end_op();
-//   return -1;
-
-//   return -1;
