@@ -330,20 +330,62 @@ sys_open(void)
     return -1;
   }
 
+  // printf("open: path=%s; no_follow=%d\n", path, !!(omode & O_NOFOLLOW));
+
+  // resolve symlink
+  if(!(omode & O_NOFOLLOW)) {
+    uint cnt = 0;
+    while(ip->type == T_SYMLINK && cnt < 10) {
+      int len = 0;
+      readi(ip, 0, (uint64)&len, 0, sizeof(int));
+      
+      if(len > MAXPATH)
+        panic("open: corrupted symlink inode");
+      
+      readi(ip, 0, (uint64)path, sizeof(int), len + 1);
+      iunlockput(ip);
+
+      if((ip = namei(path)) == 0){
+        end_op();
+        return -1;
+      }
+
+      ilock(ip);
+      
+      if(ip->type == T_DIR && omode != O_RDONLY){
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
+
+      if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
+
+      // printf("open: resolve symlink -> %s len=%d\n", path, len);
+
+      cnt++;
+    }
+
+    if(cnt >= 10) {
+      iunlockput(ip);
+      end_op();
+      return -1;
+    }
+  }
+
   if(ip->type == T_DEVICE){
     f->type = FD_DEVICE;
     f->major = ip->major;
   } else {
     f->type = FD_INODE;
-    f->off = 0;
   }
   f->ip = ip;
+  f->off = 0;
   f->readable = !(omode & O_WRONLY);
   f->writable = (omode & O_WRONLY) || (omode & O_RDWR);
-
-  if((omode & O_TRUNC) && ip->type == T_FILE){
-    itrunc(ip);
-  }
 
   iunlock(ip);
   end_op();
@@ -484,3 +526,86 @@ sys_pipe(void)
   }
   return 0;
 }
+
+int
+symlink(char* target, char* path)
+{
+  int fd;
+  struct file *f;
+  struct inode *ip;
+
+  // find target inode
+  begin_op();
+
+  // new inode
+  ip = create(path, T_SYMLINK, 0, 0);
+    if(ip == 0){
+      end_op();
+      return -1;
+    }
+
+  if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
+    if(f)
+      fileclose(f);
+    iunlockput(ip);
+    end_op();
+    return -1;
+  }
+
+  f->type = FD_INODE;
+  f->ip = ip;
+  f->off = 0;
+  f->readable = 0;
+  f->writable = 0;
+
+  int len = strlen(target);
+  // printf("symlink: symlink %s -> %s len=%d\n", path, target, len);
+  writei(ip, 0, (uint64)&len, 0, sizeof(int));
+  writei(ip, 0, (uint64)target, sizeof(int), len + 1);
+  iupdate(ip);
+  iunlockput(ip);
+
+  end_op();
+      
+  return 0;
+}
+
+uint64
+sys_symlink(void)
+{
+  char target[MAXPATH], path[MAXPATH];
+
+  if(argstr(0, target, DIRSIZ) < 0 || argstr(1, path, MAXPATH) < 0)
+      return -1;
+  symlink(target, path);
+  return 0;
+}
+
+
+
+
+
+
+
+
+//   ilock(dp);
+//   if(dp->dev != ip->dev || dirlink(dp, target, ip->inum) < 0){
+//     iunlockput(dp);
+//     goto bad;
+//   }
+//   iunlockput(dp);
+//   iput(ip);
+
+//   end_op();
+
+//   return 0;
+
+// bad:
+//   ilock(ip);
+//   ip->nlink--;
+//   iupdate(ip);
+//   iunlockput(ip);
+//   end_op();
+//   return -1;
+
+//   return -1;
