@@ -330,7 +330,7 @@ sys_open(void)
     return -1;
   }
 
-   // resolve symlink
+  // resolve symlink
   if(!(omode & O_NOFOLLOW)) {
     uint cnt = 0;
     while(ip->type == T_SYMLINK && cnt < 10) {
